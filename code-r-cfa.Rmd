@@ -1,0 +1,315 @@
+---
+title: "Untitled"
+author: "Hagan"
+date: "4/27/2022"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+
+```{r}
+library(car)
+library(semPlot)
+library(psych)
+library(knitr)
+library(kableExtra)
+library(MVN)
+library(dplyr)
+library(magrittr)
+library(tidyr)
+library(corrplot)
+library(ggraph)
+
+```
+
+
+The Data Set
+
+```{r}
+data_fa = read.csv("D:/Hagan/PENS/Matakuliah/Semester 2/Statistika/UAS/data_fa percobaan.csv", header = TRUE, sep = ';')
+data_fa$GENDER = as.factor(data_fa$GENDER)
+data_fa$AGE = as.factor(data_fa$AGE)
+data_fa$X2 = as.integer(data_fa$X2)
+knitr::kable(head(data_fa),booktabs=TRUE,format="markdown")
+
+```
+
+```{r}
+data_fa
+```
+
+```{r}
+# create the working data frame by removing the ID variable
+data_fa <- data_fa[,1:20]
+
+```
+
+1. Numeric and Graphical Description of the Data
+
+1.1. Univariate descriptive statistics from the psych package.
+
+```{r}
+knitr::kable(describe(data_fa,type=2,fast=T),booktabs=TRUE,format="markdown")
+```
+
+1.2 Univariate Distribution Tests and Plots plus Evaluation of Multivariate
+Normality
+
+```{r}
+x_vars <- data_fa
+# use the mvn function for an extensive evaluation
+# note that different kinds of tests can be specified with changes in the arguments
+result <- mvn(data= x_vars, mvnTest="mardia", univariateTest="AD")
+kable(result$univariateNormality, booktabs=TRUE)
+
+```
+
+
+
+```{r}
+kable(result$multivariateNormality, booktabs=TRUE, format="markdown")
+
+```
+
+
+
+```{r}
+#kable(mvn(data= x_vars,univariatePlot="histogram"), booktabs=TRUE, format="markdown")
+```
+1.2  Bivariate Characteristics of the data set
+1.2.1
+
+```{r}
+scatterplotMatrix(data_fa,cex=.2,
+smooth=list(col.smooth="red", spread=F, lwd.smooth=.3),
+col="skyblue1",
+regLine=list(lwd=.3,col="black"))
+```
+
+1.3 Covariances and Zero Order Correlations
+
+```{r}
+covmatrix1 <- round(cov(data_fa),digits=3)
+knitr::kable(covmatrix1,booktabs=TRUE,format="markdown")
+```
+```{r}
+mat1 <- cor(data_fa)
+corrplot(mat1,type="upper",tl.pos="tp")
+corrplot(mat1,add=T,type="lower", method="number",
+col="black", diag=FALSE,tl.pos="n", cl.pos="n")
+```
+
+Using the lavaan package for CFA
+
+2.1 Implement the CFA, First Model
+
+```{r}
+library(lavaan)
+```
+
+2.1.1 Define and fit the first model
+
+```{r}
+### CFA Model
+wisc.model <- 'body=~ï..X1+X9+X12+X14
+mind =~ X2+X11+X16
+connection =~ X4+X5+X6
+expertise =~ X7+X8+X10+X13+X17
+meaning =~ X3+X15+X18+X19+X20'
+```
+
+
+```{r}
+fit1 <- lavaan::cfa(wisc.model, data=data_fa,std.lv=TRUE)
+summary(fit1, fit.measures=T,standardized=T)
+
+```
+2.1.2 Obtain coefficients
+
+
+```{r}
+# obtain only the coefficients
+kable(coef(fit1), booktabs=TRUE, format="markdown")
+
+```
+2.1.3 Complete parameter listing
+
+```{r}
+parameterEstimates(fit1,standardized=T)
+
+```
+
+
+```{r}
+parameterEstimates(fit1, standardized=TRUE) %>%
+filter(op == "=~") %>%
+select('Latent Factor'=lhs, Indicator=rhs, B=est, SE=se, Z=z, 'p-value'=pvalue, Beta=std.all) %>%
+knitr::kable(digits = 3, booktabs=TRUE, format="markdown", caption="Factor Loadings")
+
+```
+2.1.4 Residuals correlation matrix
+
+```{r}
+cor_table <- residuals(fit1, type = "cor")$cov
+#cor_table[upper.tri(cor_table)] <- # erase the upper triangle
+#diag(cor_table) <- NA # erase the diagonal 0's
+knitr::kable(cor_table, digits=3,format="markdown", booktabs=TRUE) # makes a nice table and rounds ever
+```
+2.1.5 Plot the residuals
+
+
+```{r}
+# extract the residuals from the fit1 model
+# get rid of the duplicates and diagonal values
+# create a vector for a
+res1 <- residuals(fit1, type = "cor")$cov
+res1[upper.tri(res1,diag=T)] <- NA
+v1 <- as.vector(res1)
+v2 <- v1[!is.na(v1)]
+qqPlot(v2,id=F)
+```
+
+2.1.6 Modification Indices
+
+```{r}
+kable(modificationIndices(fit1, sort.=TRUE, minimum.value=3), booktabs=TRUE, format="markdown")
+
+```
+2.1.1 Path Diagram for the bifactor Model 1
+
+
+```{r}
+# Note that the base plot, including standardized path coefficients plots positive coefficients green
+# and negative coefficients red. Red-green colorblindness issues anyone?
+# I redrew it here to choose a blue and red. But all the coefficients in this example are
+# positive,so they are shown with the skyblue.
+# more challenging to use colors other than red and green. not in this doc
+semPaths(fit1, residuals=F,sizeMan=7,"std",
+posCol=c("skyblue4", "red"),
+#edge.color="skyblue4",
+edge.label.cex=1.2,layout="circle2")
+
+```
+
+
+```{r}
+# or we could draw the paths in such a way to include the residuals:
+#semPaths(fit1, sizeMan=7,"std",edge.color="skyblue4",edge.label.cex=1,layout="circle2")
+# the base path diagram can be drawn much more simply:
+#semPaths(fit1)
+# or
+semPaths(fit1,"std")
+```
+
+2.2 Generate a second model and compare
+
+2.2.1 Add a path (Perf to comp) and Fit the second CFA model
+
+
+```{r}
+### CFA Model
+wisc.model2 <- 'healthy=~ï..X1+X9+X12+X14+X2+X11+X16
+connection =~ X4+X5+X6
+expertise =~ X7+X8+X10+X13+X17
+meaning =~ X3+X15+X18+X19+X20'
+
+```
+
+
+```{r}
+fit2 <- lavaan::cfa(wisc.model2, data=data_fa,std.lv=TRUE)
+summary(fit2, fit.measures=T,standardized=T)
+
+```
+
+2.2.2 Obtain coefficients
+
+```{r}
+knitr::kable(coef(fit2),booktabs=TRUE, format="markdown")
+```
+
+
+```{r}
+parameterEstimates(fit2,standardized=TRUE)
+
+```
+
+
+```{r}
+parameterEstimates(fit2, standardized=TRUE) %>%
+filter(op == "=~") %>%
+select('Latent Factor'=lhs, Indicator=rhs, B=est, SE=se, Z=z, 'p-value'=pvalue, Beta=std.all) %>%
+knitr::kable(digits = 3, format="markdown", booktabs=TRUE, caption="Factor Loadings")
+```
+2.2.3 Residuals correlation matrix
+
+```{r}
+cor_table2 <- residuals(fit2, type = "cor")$cov
+#cor_table[upper.tri(cor_table)] <- # erase the upper triangle
+#diag(cor_table) <- NA # erase the diagonal 0's
+knitr::kable(cor_table2, digits=3,format="markdown",booktabs=TRUE) # makes a nice table and rounds ever
+```
+2.2.4 Modification Indices for Model 2
+
+```{r}
+kable(modificationIndices(fit2, sort.=TRUE, minimum.value=3), booktabs=TRUE, format="markdown")
+
+```
+
+2.2.5 Path Diagram for Model 2
+```{r}
+# Note that the base plot, including standardized path coefficients plots positive coefficients green
+# and negative coefficients red. Red-green colorblindness issues anyone?
+# I redrew it here to choose a blue and red. But all the coefficients in this example are
+# positive,so they are shown with the skyblue.
+# more challenging to use colors other than red and green. not in this doc
+semPaths(fit2, residuals=F,sizeMan=7,"std",
+posCol=c("skyblue4", "red"),
+#edge.color="skyblue4",
+edge.label.cex=1.2,layout="circle2")
+```
+
+
+```{r}
+# or we could draw the paths in such a way to include the residuals:
+#semPaths(fit1, sizeMan=7,"std",edge.color="skyblue4",edge.label.cex=1,layout="circle2")
+# the base path diagram can be drawn much more simply:
+#semPaths(fit2)
+# or
+semPaths(fit2,"std")
+
+```
+2.3 Compare Model 1 and Model 2
+
+```{r}
+kable(anova(fit1,fit2), booktabs=TRUE, format="markdown")
+
+```
+
+SELESAI
+
+addtional
+2.4 An additional perspective on estimation and optimization
+
+```{r}
+### CFA Model
+wisc.model <- 'body=~ï..X1+X9+X12+X14
+mind =~ X2+X11+X16
+connection =~ X4+X5+X6
+expertise =~ X7+X8+X10+X13+X17
+meaning =~ X3+X15+X18+X19+X20'
+```
+
+
+```{r}
+fit1eqs <- lavaan::cfa(wisc.model, data=data_fa,std.lv=TRUE, mimic="EQS")
+summary(fit1eqs, fit.measures=T,standardized=T)
+
+```
+
+
+```{r}
+
+```
